@@ -287,7 +287,7 @@ class Experiment:
         return loss, aux_data
 
     def train_epoch(
-            self, train_loader, valid_loader, device, return_logs=False):
+        self, train_loader, valid_loader, device, return_logs=False):
         log_lossses = defaultdict(list)
         global_logs = []
         log_time = time.time()
@@ -303,7 +303,7 @@ class Experiment:
             self.trained_steps += 1
             
             ###
-            time.sleep(2)
+            # time.sleep(2)
             ###
             
             # if self.train_steps
@@ -313,13 +313,14 @@ class Experiment:
                 elapsed_time = time.time() - log_time
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
+                batch_size = self._exp_conf.batch_size
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={step_per_sec * batch_size:.5f}')
                 log_lossses = defaultdict(list)
 
             # Take checkpoint

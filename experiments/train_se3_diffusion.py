@@ -811,8 +811,6 @@ def run(conf: DictConfig) -> None:
 
     exp = Experiment(conf=conf)
     exp.start_training()
-    
-    # torch.cuda.profiler.stop()
 
 
 if __name__ == '__main__':

@@ -175,3 +175,6 @@ pynb/
 
 #slurm_output for record
 slurm_output/
+
+# nsys
+nsys/

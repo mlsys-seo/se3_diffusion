@@ -46,7 +46,6 @@ from data import all_atom
 from model import score_network
 from experiments import utils as eu
 
-
 class Experiment:
 
     def __init__(
@@ -127,7 +126,7 @@ class Experiment:
         self._diffuser = se3_diffuser.SE3Diffuser(self._diff_conf)
         self._model = score_network.ScoreNetwork(
             self._model_conf, self.diffuser)
-
+        
         if ckpt_model is not None:
             ckpt_model = {k.replace('module.', ''):v for k,v in ckpt_model.items()}
             self._model.load_state_dict(ckpt_model, strict=True)
@@ -287,6 +286,17 @@ class Experiment:
             self._model = self.model.to(device)
             self._log.info(f"Using device: {device}")
 
+        if self._exp_conf.num_gpus > 1:
+            device_ids = [
+                f"cuda:{i}" for i in self._available_gpus[:self._exp_conf.num_gpus]
+            ]
+            self._log.info(f"Multi-GPU training on GPUs: {device_ids}")
+            self._model = DP(self._model, device_ids=device_ids)
+            
+        batch_size = self._exp_conf.batch_size
+        self._log.info(f"Batch size: {batch_size}")
+        
+        self._model = self.model.to(device)
         self._model.train()
 
         (
@@ -324,7 +334,7 @@ class Experiment:
         return loss, aux_data
 
     def train_epoch(
-            self, train_loader, valid_loader, device, return_logs=False):
+        self, train_loader, valid_loader, device, return_logs=False):
         log_lossses = defaultdict(list)
         global_logs = []
         log_time = time.time()
@@ -344,13 +354,15 @@ class Experiment:
                 elapsed_time = time.time() - log_time
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
+                batch_size = self._exp_conf.batch_size
+                throughput_sec = step_per_sec * batch_size
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput/sec={throughput_sec:.5f}')
                 log_lossses = defaultdict(list)
 
             # Take checkpoint
@@ -799,6 +811,8 @@ def run(conf: DictConfig) -> None:
 
     exp = Experiment(conf=conf)
     exp.start_training()
+    
+    # torch.cuda.profiler.stop()
 
 
 if __name__ == '__main__':

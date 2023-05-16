@@ -44,9 +44,6 @@ from data import all_atom
 from model import score_network
 from experiments import utils as eu
 
-# import autonvtx
-
-
 class Experiment:
 
     def __init__(
@@ -114,11 +111,6 @@ class Experiment:
         self._model = score_network.ScoreNetwork(
             self._model_conf, self.diffuser)
         
-        ###
-        # autonvtx(self._model)
-        # torch.cuda.profiler.start()
-        ###
-
         if ckpt_model is not None:
             ckpt_model = {k.replace('module.', ''):v for k,v in ckpt_model.items()}
             self._model.load_state_dict(ckpt_model, strict=True)
@@ -249,6 +241,14 @@ class Experiment:
             ]
             self._log.info(f"Multi-GPU training on GPUs: {device_ids}")
             self._model = DP(self._model, device_ids=device_ids)
+            
+        batch_size = self._exp_conf.batch_size
+        self._log.info(f"Batch size: {batch_size}")
+        import pdb
+        pdb.set_trace()
+        print(self._exp_conf.name)
+        self._log.info("sdfsd")
+        
         self._model = self.model.to(device)
         self._model.train()
 
@@ -301,12 +301,6 @@ class Experiment:
             for k,v in aux_data.items():
                 log_lossses[k].append(du.move_to_np(v))
             self.trained_steps += 1
-            
-            ###
-            # time.sleep(2)
-            ###
-            
-            # if self.train_steps
 
             # Logging to terminal
             if self.trained_steps == 1 or self.trained_steps % self._exp_conf.log_freq == 0:
@@ -314,13 +308,14 @@ class Experiment:
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
                 batch_size = self._exp_conf.batch_size
+                throughput_sec = step_per_sec * batch_size
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={step_per_sec * batch_size:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput/sec={throughput_sec:.5f}')
                 log_lossses = defaultdict(list)
 
             # Take checkpoint

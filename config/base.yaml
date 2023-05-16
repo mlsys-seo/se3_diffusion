@@ -5,10 +5,10 @@ defaults:
 
 data:
   # CSV for path and metadata to training examples.
-  csv_path: ./data/data/processed_pdb/metadata.csv
+  csv_path: ./data/processed_pdb/metadata.csv
   filtering:
-    max_len: 256
-    min_len: 60
+    max_len: 512
+    min_len: 128
     # Selects a subset of examples. Useful for debugging.
     subset: null
     allowed_oligomer: [monomeric]
@@ -70,8 +70,8 @@ experiment:
   run_id: null
 
   # Training arguments
-  log_freq: 15
-  batch_size: 4096
+  log_freq: 10
+  batch_size: 128
   eval_batch_size: ${data.samples_per_eval_length}
   num_loader_workers: 10
   num_epoch: 95
@@ -79,7 +79,7 @@ experiment:
   max_squared_res: 300000
   prefetch_factor: 100
   use_gpu: True
-  num_gpus: 2
+  num_gpus: 1
 
   # Wandb logging
   wandb_dir: ./
@@ -88,7 +88,7 @@ experiment:
   # How many steps to checkpoint between.
   ckpt_freq: 10000
   # Take early checkpoint at step 100. Helpful for catching eval bugs early.
-  early_ckpt: True
+  early_ckpt: False
 
   # Checkpoint directory to warm start from.
   warm_start: null

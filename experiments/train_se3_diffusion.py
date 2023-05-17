@@ -13,6 +13,7 @@ To modify config options with the command line,
 > python experiments/train_se3_diffusion.py experiment.batch_size=32
 
 """
+import sys
 import os
 import torch
 import GPUtil
@@ -298,7 +299,6 @@ class Experiment:
         
         self._model = self.model.to(device)
         self._model.train()
-
         (
             train_loader,
             valid_loader,
@@ -339,7 +339,10 @@ class Experiment:
         global_logs = []
         log_time = time.time()
         step_time = time.time()
-        for train_feats in train_loader:
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        for train_feats in train_loader:            
             train_feats = tree.map_structure(
                 lambda x: x.to(device), train_feats)
             loss, aux_data = self.update_fn(train_feats)
@@ -350,21 +353,43 @@ class Experiment:
             self.trained_steps += 1
 
             # Logging to terminal
-            if self.trained_steps == 1 or self.trained_steps % self._exp_conf.log_freq == 0:
+            if self.trained_steps % self._exp_conf.log_freq == 0:
                 elapsed_time = time.time() - log_time
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
                 batch_size = self._exp_conf.batch_size
-                throughput_sec = step_per_sec * batch_size
+                end.record()
+                torch.cuda.synchronize()
+                throughput_sec = batch_size / start.elapsed_time(end) * 1000
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput/sec={throughput_sec:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput_sec={throughput_sec:.5f}')
                 log_lossses = defaultdict(list)
+                start.record()
+                
+            def get_value(num):
+                if num == 8192:
+                    return 16
+                elif num == 2048:
+                    return 64
+                elif num == 512:
+                    return 128
+                elif num == 128:
+                    return 512
+                elif num == 32:
+                    return 2048
+                elif num == 16:
+                    return 8192
+                else:
+                    return None
 
+            if self.trained_steps == get_value(self._exp_conf.batch_size):
+                sys.exit()
+                
             # Take checkpoint
             if self._exp_conf.ckpt_dir is not None and (
                     (self.trained_steps % self._exp_conf.ckpt_freq) == 0

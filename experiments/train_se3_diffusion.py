@@ -308,6 +308,9 @@ class Experiment:
 
         logs = []
         for epoch in range(self.trained_epochs, self._exp_conf.num_epoch):
+            ##
+            print(epoch)
+            ##
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             if valid_sampler is not None:
@@ -360,34 +363,20 @@ class Experiment:
                 batch_size = self._exp_conf.batch_size
                 end.record()
                 torch.cuda.synchronize()
-                throughput_sec = batch_size / start.elapsed_time(end) * 1000
+                gpu_elapsed_time = start.elapsed_time(end)
+                print("gpu elapsed time:", gpu_elapsed_time)
+                throughput = batch_size * self._exp_conf.num_gpus / (gpu_elapsed_time * 1000)
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput_sec={throughput_sec:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={throughput:.5f}')
                 log_lossses = defaultdict(list)
                 start.record()
-                
-            def get_value(num):
-                if num == 8192:
-                    return 16
-                elif num == 2048:
-                    return 64
-                elif num == 512:
-                    return 128
-                elif num == 128:
-                    return 512
-                elif num == 32:
-                    return 2048
-                elif num == 16:
-                    return 8192
-                else:
-                    return None
 
-            if self.trained_steps == get_value(self._exp_conf.batch_size):
+            if self.trained_steps == 64:
                 sys.exit()
                 
             # Take checkpoint

@@ -70,8 +70,11 @@ experiment:
   name: throughput_test_batch_32
   run_id: null
 
+  #training mode
+  use_ddp : False
+
   # Training arguments
-  log_freq: 10
+  log_freq: 16
   batch_size: 32
   eval_batch_size: ${data.samples_per_eval_length}
   num_loader_workers: 10

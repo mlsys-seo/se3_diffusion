@@ -70,6 +70,9 @@ experiment:
   name: throughput_test_batch_32768
   run_id: null
 
+  #training mode
+  use_ddp : False
+
   # Training arguments
   log_freq: 10
   batch_size: 32768

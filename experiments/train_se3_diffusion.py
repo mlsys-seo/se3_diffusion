@@ -58,6 +58,9 @@ class Experiment:
         Args:
             exp_cfg: Experiment configuration.
         """
+        
+        print("Experiment __init__ start")
+        
         self._log = logging.getLogger(__name__)
         self._available_gpus = ''.join(
             [str(x) for x in GPUtil.getAvailable(
@@ -805,6 +808,8 @@ class Experiment:
 
 @hydra.main(version_base=None, config_path="../config", config_name="base")
 def run(conf: DictConfig) -> None:
+
+    print("start run")
 
     # Fixes bug in https://github.com/wandb/wandb/issues/1525
     os.environ["WANDB_START_METHOD"] = "thread"

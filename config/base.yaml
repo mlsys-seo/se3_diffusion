@@ -73,7 +73,7 @@ experiment:
   use_ddp : False
 
   # Training arguments
-  log_freq: 10
+  log_freq: 1
   batch_size: 128
   eval_batch_size: ${data.samples_per_eval_length}
   num_loader_workers: 10

@@ -311,6 +311,7 @@ class Experiment:
 
         logs = []
         for epoch in range(self.trained_epochs, self._exp_conf.num_epoch):
+            print(f"epoch {epoch} start")
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             if valid_sampler is not None:
@@ -351,6 +352,9 @@ class Experiment:
             for k,v in aux_data.items():
                 log_lossses[k].append(du.move_to_np(v))
             self.trained_steps += 1
+            
+            # step ghkrdlsgkfurh 
+            time.sleep(5000)
 
             # Logging to terminal
             if self.trained_steps == 1 or self.trained_steps % self._exp_conf.log_freq == 0:
@@ -358,15 +362,19 @@ class Experiment:
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
                 batch_size = self._exp_conf.batch_size
-                throughput_sec = step_per_sec * batch_size
+                throughput = step_per_sec * batch_size
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput/sec={throughput_sec:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={throughput:.5f}')
                 log_lossses = defaultdict(list)
+                
+            # whdfy whrjsans
+            if self.train_steps == 5:
+                exit()
 
             # Take checkpoint
             if self._exp_conf.ckpt_dir is not None and (

@@ -274,21 +274,38 @@ class Experiment:
 
     def update_fn(self, data):
         """Updates the state using some data and returns metrics."""
+        torch.cuda.nvtx.range_push("zero_grad")
         self._optimizer.zero_grad()
+        torch.cuda.nvtx.range_pop()
+        
+#        torch.cuda.nvtx.range_push("self.loss_fn")
         loss, aux_data = self.loss_fn(data)
+#        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("loss.backward")
         loss.backward()
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("self.optimizer.step")
         self._optimizer.step()
+        torch.cuda.nvtx.range_pop()
+        
         return loss, aux_data
 
     def train_epoch(
-        self, train_loader, valid_loader, device, return_logs=False):
+        self, train_loader, valid_loader, device, return_logs=False):       
         log_lossses = defaultdict(list)
         global_logs = []
         log_time = time.time()
         step_time = time.time()
         for train_feats in train_loader:
+            torch.cuda.nvtx.range_push("data loading")
+            
             train_feats = tree.map_structure(
                 lambda x: x.to(device), train_feats)
+            
+            torch.cuda.nvtx.range_pop()
+            
             loss, aux_data = self.update_fn(train_feats)
             if return_logs:
                 global_logs.append(loss)
@@ -300,12 +317,10 @@ class Experiment:
             time.sleep(1)
 
             # profiling stop
-            if self.train_steps % 100 == 1:
-                YN = input("stop y|n: ")
-                if YN == "n":
-                    torch.cuda.profiler.stop()
-                    return
-
+            if self.trained_steps == 5:
+                torch.cuda.profiler.stop()
+                exit()
+                
             # Logging to terminal
             if self.trained_steps == 1 or self.trained_steps % self._exp_conf.log_freq == 0:
                 elapsed_time = time.time() - log_time
@@ -498,6 +513,8 @@ class Experiment:
             loss: Final training loss scalar.
             aux_data: Additional logging data.
         """
+        
+        torch.cuda.nvtx.range_push("start loss_fn")
         if self._model_conf.embed.embed_self_conditioning and random.random() > 0.5:
             with torch.no_grad():
                 batch = self._self_conditioning(batch)
@@ -515,14 +532,18 @@ class Experiment:
 
         pred_rot_score = model_out['rot_score'] * diffuse_mask[..., None]
         pred_trans_score = model_out['trans_score'] * diffuse_mask[..., None]
-
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("Translation score loss")
         # Translation score loss
         trans_score_mse = (gt_trans_score - pred_trans_score)**2 * loss_mask[..., None]
         trans_score_loss = torch.sum(
             trans_score_mse / trans_score_scaling[:, None, None]**2,
             dim=(-1, -2)
         ) / (loss_mask.sum(dim=-1) + 1e-10)
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push("Translation x0 loss")
         # Translation x0 loss
         gt_trans_x0 = batch['rigids_0'][..., 4:] * self._exp_conf.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self._exp_conf.coordinate_scaling
@@ -537,7 +558,9 @@ class Experiment:
         )
         trans_loss *= self._exp_conf.trans_loss_weight
         trans_loss *= int(self._diff_conf.diffuse_trans)
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push("Rotation loss")
         # Rotation loss
         rot_mse = (gt_rot_score - pred_rot_score)**2 * loss_mask[..., None]
         rot_loss = torch.sum(
@@ -546,7 +569,9 @@ class Experiment:
         ) / (loss_mask.sum(dim=-1) + 1e-10)
         rot_loss *= self._exp_conf.rot_loss_weight
         rot_loss *= int(self._diff_conf.diffuse_rot)
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push("Backborne atom loss")
         # Backbone atom loss
         pred_atom37 = model_out['atom37'][:, :, :5]
         gt_rigids = ru.Rigid.from_tensor_7(batch['rigids_0'].type(torch.float32))
@@ -566,7 +591,9 @@ class Experiment:
         bb_atom_loss *= self._exp_conf.bb_atom_loss_weight
         bb_atom_loss *= batch['t'] < self._exp_conf.bb_atom_loss_t_filter
         bb_atom_loss *= self._exp_conf.aux_loss_weight
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push("Pairwise distance loss")
         # Pairwise distance loss
         gt_flat_atoms = gt_atom37.reshape([batch_size, num_res*5, 3])
         gt_pair_dists = torch.linalg.norm(
@@ -583,7 +610,9 @@ class Experiment:
         gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
         pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
         pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]
-
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("end loss_fn")
         # No loss on anything >6A
         proximity_mask = gt_pair_dists < 6
         pair_dist_mask  = pair_dist_mask * proximity_mask
@@ -631,6 +660,10 @@ class Experiment:
 
         assert final_loss.shape == (batch_size,)
         assert batch_loss_mask.shape == (batch_size,)
+        
+        # end loss_fn
+        torch.cuda.nvtx.range_pop()
+        #
         return normalize_loss(final_loss), aux_data
 
     def _calc_trans_0(self, trans_score, trans_t, t):

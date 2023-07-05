@@ -388,8 +388,6 @@ def length_batching(
         np_dicts: List[Dict[str, np.ndarray]],
         max_squared_res: int,
     ):
-    import time
-    start = time.time()
     get_len = lambda x: x['res_mask'].shape[0]
     dicts_by_length = [(get_len(x), x) for x in np_dicts]
     length_sorted = sorted(dicts_by_length, key=lambda x: x[0], reverse=True)
@@ -398,25 +396,8 @@ def length_batching(
     pad_example = lambda x: pad_feats(x, max_len)
     padded_batch = [
         pad_example(x) for (_, x) in length_sorted[:max_batch_examples]]
-    end = time.time()
-    
-    print(f"lenght_batching time: {end - start} sec")
-    
-    return torch.utils.data.default_collate(padded_batch)
 
-def length_batching_gpu(np_dicts: List[Dict[str, np.ndarray]], max_squared_res: int):
-    get_len = lambda x: x['res_mask'].shape[0]
-    dicts_by_length = [(get_len(x), x) for x in np_dicts]
-    length_sorted = sorted(dicts_by_length, key=lambda x: x[0], reverse=True)
-    max_len = length_sorted[0][0]
-    max_batch_examples = int(max_squared_res // max_len**2)
-    pad_example = lambda x: pad_feats(x, max_len)
-    
-    # Convert to CUDA tensors
-    padded_batch_cuda = [
-        pad_example(torch.from_numpy(x).cuda()) for (_, x) in length_sorted[:max_batch_examples]]
-    
-    return torch.utils.data.default_collate(padded_batch_cuda)
+    return torch.utils.data.default_collate(padded_batch)
 
 def create_data_loader(
         torch_dataset: data.Dataset,
@@ -433,16 +414,9 @@ def create_data_loader(
     if np_collate:
         collate_fn = lambda x: concat_np_features(x, add_batch_dim=True)
     elif length_batch:
-        # cpu
-        '''
         collate_fn = lambda x: length_batching(
             x, max_squared_res=max_squared_res)
-        '''
-        
-        # gpu
-        collate_fn = lambda x: length_batching_gpu(
-            x, max_squared_res=max_squared_res)
-        
+
     else:
         collate_fn = None
     persistent_workers = True if num_workers > 0 else False

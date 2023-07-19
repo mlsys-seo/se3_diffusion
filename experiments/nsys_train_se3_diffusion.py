@@ -111,8 +111,6 @@ class Experiment:
         self._model = score_network.ScoreNetwork(
             self._model_conf, self.diffuser)
         
-        torch.cuda.profiler.start()
-
         if ckpt_model is not None:
             ckpt_model = {k.replace('module.', ''):v for k,v in ckpt_model.items()}
             self._model.load_state_dict(ckpt_model, strict=True)
@@ -278,9 +276,9 @@ class Experiment:
         self._optimizer.zero_grad()
         torch.cuda.nvtx.range_pop()
         
-#        torch.cuda.nvtx.range_push("self.loss_fn")
+#       torch.cuda.nvtx.range_push("self.loss_fn")
         loss, aux_data = self.loss_fn(data)
-#        torch.cuda.nvtx.range_pop()
+#       torch.cuda.nvtx.range_pop()
         
         torch.cuda.nvtx.range_push("loss.backward")
         loss.backward()
@@ -307,6 +305,15 @@ class Experiment:
             torch.cuda.nvtx.range_pop()
             
             loss, aux_data = self.update_fn(train_feats)
+            
+            # # late update
+            # if (self.trained_steps+1) % 5 == 0:
+            #     print("heelo")
+            #     torch.cuda.nvtx.range_push("self.optimizer.step")
+            #     self._optimizer.step()
+            #     torch.cuda.nvtx.range_pop()
+                
+            
             if return_logs:
                 global_logs.append(loss)
             for k,v in aux_data.items():
@@ -314,27 +321,28 @@ class Experiment:
             self.trained_steps += 1
 
             # To see the iteration correctly, use the pause(sleep)
-            time.sleep(1)
-
-            # profiling stop
-            if self.trained_steps == 5:
-                torch.cuda.profiler.stop()
-                exit()
-                
+            # time.sleep(1)
+             
             # Logging to terminal
             if self.trained_steps == 1 or self.trained_steps % self._exp_conf.log_freq == 0:
                 elapsed_time = time.time() - log_time
                 log_time = time.time()
                 step_per_sec = self._exp_conf.log_freq / elapsed_time
                 batch_size = self._exp_conf.batch_size
+                num_gpus = self._exp_conf.num_gpus
                 rolling_losses = tree.map_structure(np.mean, log_lossses)
                 loss_log = ' '.join([
                     f'{k}={v[0]:.4f}'
                     for k,v in rolling_losses.items() if 'batch' not in k
                 ])
                 self._log.info(
-                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={step_per_sec * batch_size:.5f}')
+                    f'[{self.trained_steps}]: {loss_log}, steps/sec={step_per_sec:.5f}, throughput={step_per_sec * batch_size * num_gpus:.5f}')
                 log_lossses = defaultdict(list)
+                
+            # profiling stop
+            if self.trained_steps == 15:
+                torch.cuda.profiler.stop()
+                exit()
 
             # Take checkpoint
             if self._exp_conf.ckpt_dir is not None and (
@@ -514,10 +522,13 @@ class Experiment:
             aux_data: Additional logging data.
         """
         
-        torch.cuda.nvtx.range_push("start loss_fn")
+        torch.cuda.nvtx.range_push("self_conditioning")
         if self._model_conf.embed.embed_self_conditioning and random.random() > 0.5:
             with torch.no_grad():
                 batch = self._self_conditioning(batch)
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("what")
         model_out = self.model(batch)
         bb_mask = batch['res_mask']
         diffuse_mask = 1 - batch['fixed_mask']
@@ -797,10 +808,12 @@ def run(conf: DictConfig) -> None:
 
     # Fixes bug in https://github.com/wandb/wandb/issues/1525
     os.environ["WANDB_START_METHOD"] = "thread"
+    
+    torch.cuda.profiler.start()
 
     exp = Experiment(conf=conf)
     exp.start_training()
-    torch.cuda.profiler.stop()
+    # torch.cuda.profiler.stop()
 
 
 if __name__ == '__main__':
